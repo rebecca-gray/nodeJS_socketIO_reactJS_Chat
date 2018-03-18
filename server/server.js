@@ -8,41 +8,142 @@ const io = require('socket.io')(server);
 const users = {}; // socket.id: {socket, nickname},
 const waiting = []; // socket,
 
+
+/*
+*  When a pairing is made
+*  two users are paired in a new room
+*  the users join the room and and informed.
+*/
+const userWaitingResolved = (socket) => {
+    const partner = waiting.shift();
+    const room = `${socket.id}|partition|${partner.id}`;
+    users[socket.id] = {
+        socket,
+        nickname: '',
+    };
+    console.log(`Client room ${room}`);
+    const clients = [socket, partner];
+    _.each(clients, (client) => {
+        client.join(room);
+    });
+    io.to(room).emit('INITIALIZE_CLIENT', {
+        room,
+        author: '',
+        message: 'Connection Made!'
+    });
+}
+
+/*
+*  adds the users socket to a list of waiting users
+*  informs the user that they are in the que.
+*/
+const userWaiting = (socket) => {
+    waiting.push(socket);
+    io.to(socket.id).emit('WAITING', {
+        message: 'We are looking for a partner...'
+    });
+}
+
+
+/*
+*  adds a nickname to the user's profile
+*/
+const setNickname = (data) => {
+    if (users[data.socket]) {
+        users[data.socket].nickname = data.nickname;
+    }
+}
+
+/*
+*  handles a message of IRC delay
+*  sends the message in data, after the delay specified.
+*/
+const sendMessageIRCDelay = (data, irc) => {
+    console.log(irc);
+    const message = irc[2];
+    const delay = irc[1];
+    setTimeout(() => {
+        sendMessage({
+            message,
+            author: data.author,
+            room: data.room,
+        });
+    }, delay);
+}
+
+/*
+*  handles a message of IRC hop
+*  closes the chat room & informs the clients in that room.
+*/
+const sendMessageIRCHop = (data) => {
+    sendMessage({
+        message: 'Chat ended. Please reconnect to join another chat.',
+        author: data.author,
+        room: data.room,
+    });
+    const clients = data.room.split('|partition|');
+    _.each(clients, (client) => {
+        if (users[client]) {
+            users[client].socket.leave(data.room);
+        }
+    });
+}
+
+/*
+*  handles a message of IRC format
+*  currently supports /delay and /hop
+*  other IRC prefixes will be sent as regular messages
+*/
+const sendMessageIRC = (data) => {
+    // irc formated message
+    const irc = data.message.split(' ');
+    const prefix = irc[0];
+    switch (prefix) {
+        case '/delay':
+            console.log('delay');
+            sendMessageIRCDelay(data, irc);
+            break;
+        case '/hop':
+            console.log('hop');
+            sendMessageIRCHop(data);
+            break;
+        default:
+            console.log('unsupported irc prefix');
+            sendMessage(data);
+    }
+}
+
+/*
+*  sends message to a room provided as data.room
+*
+*/
+const sendMessage = (data) => {
+    console.log(`sendMessage`);
+    console.log(data);
+    io.to(data.room).emit('RECEIVE_MESSAGE', data);
+}
+
+
+
+/*
+*   Define connection events for sockets
+*
+*/
+
 io.on('connection', (socket) => {
     console.log(`Client connected ${socket.id}`);
 
     if (waiting.length) {
         console.log(`Client connecting ${socket.id}`);
-        const partner = waiting.shift();
-        const room = `${socket.id}|partition|${partner.id}`;
-        users[socket.id] = {
-            socket,
-            nickname: '',
-        };
-        console.log(`Client room ${room}`);
-        const clients = [socket, partner];
-        _.each(clients, (client) => {
-            client.join(room);
-        });
-        io.to(room).emit('INITIALIZE_CLIENT', {
-            room,
-            author: '',
-            message: 'Connection Made!'
-        });
-
+        userWaitingResolved(socket);
     } else {
-        waiting.push(socket);
         console.log(`Client waiting ${socket.id}`);
-        io.to(socket.id).emit('WAITING', {
-            message: 'We are looking for a partner...'
-        });
+        userWaiting(socket);
     }
 
     socket.on('SET_NICKNAME', (data) => {
         console.log(`nickname ${data.nickname}`);
-        if (users[data.socket]) {
-            users[data.socket].nickname = data.nickname;
-        }
+        setNickname(data);
     });
 
     socket.on('SEND_MESSAGE', (data) => {
@@ -53,41 +154,9 @@ io.on('connection', (socket) => {
         }
         if (data.message.split(' ')[0].indexOf('/') !== -1) {
             console.log('irc');
-            // irc formated message
-            const irc = data.message.split(' ');
-            const prefix = irc[0];
-            switch (prefix) {
-                case '/delay':
-                    console.log('delay');
-                    const message = irc[2];
-                    const delay = irc[1];
-                    _.delay(() => {
-                        io.to(data.room).emit('RECEIVE_MESSAGE', {
-                            message,
-                            author: data.author,
-                        });
-                    }, delay);
-                    break;
-                case '/hop':
-                    console.log('hop');
-                    io.to(data.room).emit('RECEIVE_MESSAGE', {
-                        message: 'Chat ended. Please reconnect to join another chat.',
-                        author: data.author,
-                    });
-                    const clients = data.room.split('|partition|');
-                    _.each(clients, (client) => {
-                        if (users[client]) {
-                            users[client].socket.leave(data.room);
-                        }
-                    });
-                    break;
-                default:
-                    console.log('unsupported irc prefix');
-                    io.to(data.room).emit('RECEIVE_MESSAGE', data);
-            }
-
+            sendMessageIRC(data);
         } else {
-            io.to(data.room).emit('RECEIVE_MESSAGE', data);
+            sendMessage(data);
         }
     });
 
