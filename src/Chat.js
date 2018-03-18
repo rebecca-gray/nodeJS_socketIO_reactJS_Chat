@@ -52,7 +52,7 @@ class Chat extends React.Component{
         const addMessage = (data) => {
             console.log("addMessage", data);
             let message = data.message;
-            if (data.author) {
+            if (data.author && data.author.length) {
                 message = `${data.author}: ${data.message}`;
             }
             this.setState({messages: [...this.state.messages, message]});
