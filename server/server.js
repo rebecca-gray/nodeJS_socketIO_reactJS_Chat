@@ -8,6 +8,32 @@ const io = require('socket.io')(server);
 const users = {}; // socket.id: {socket, nickname},
 const waiting = []; // socket,
 
+/*
+* create a new room
+*/
+const getRoom = (socket, partner) =>
+    `${socket.id}|partition|${partner.id}`;
+
+/*
+* add clients to the room
+*/
+const joinRoom = (socket, partner, room) => {
+    const clients = [socket, partner];
+    _.each(clients, (client) => {
+        client.join(room);
+    });
+}
+
+/*
+* send message initializing room on client
+*/
+const initRoom = (room) => {
+    io.to(room).emit('INITIALIZE_CLIENT', {
+        room,
+        author: '',
+        message: 'Connection Made!'
+    });
+}
 
 /*
 *  When a pairing is made
@@ -16,21 +42,14 @@ const waiting = []; // socket,
 */
 const userWaitingResolved = (socket) => {
     const partner = waiting.shift();
-    const room = `${socket.id}|partition|${partner.id}`;
+    const room = getRoom(socket, partner);
     users[socket.id] = {
         socket,
         nickname: '',
     };
     console.log(`Client room ${room}`);
-    const clients = [socket, partner];
-    _.each(clients, (client) => {
-        client.join(room);
-    });
-    io.to(room).emit('INITIALIZE_CLIENT', {
-        room,
-        author: '',
-        message: 'Connection Made!'
-    });
+    joinRoom(socket, partner, room);
+    initRoom(room);
 }
 
 /*
