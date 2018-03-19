@@ -78,7 +78,6 @@ const sendMessageIRCDelay = (data, irc) => {
 const sendMessageIRCHop = (data) => {
     sendMessage({
         message: 'Chat ended. Please reconnect to join another chat.',
-        author: data.author,
         room: data.room,
     });
     const clients = data.room.split('|partition|');
@@ -119,7 +118,6 @@ const sendMessageIRC = (data) => {
 */
 const sendMessage = (data) => {
     console.log(`sendMessage`);
-    console.log(data);
     io.to(data.room).emit('RECEIVE_MESSAGE', data);
 }
 
@@ -165,7 +163,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log('Client disconnected')
+        console.log('Client disconnected');
     });
 
 });
